@@ -775,15 +775,22 @@ function renderKehadiranPage(){
 }
 
 let currentSession = null;
+let pendingKehadiran = {}; // simpan tanda belum disimpan, elak hilang akibat auto-sync
+function loadSesi(){
 function loadSesi(){
   const tarikh = document.getElementById('khTarikh').value;
   const kelas = document.getElementById('khKelas').value;
   const asatizah = document.getElementById('khAsatizah').value.trim();
   const rh = document.getElementById('khRH').value;
   if(!tarikh || !kelas){ return; }
+
+  // Jika bertukar ke sesi/tarikh/kelas lain, kosongkan perubahan belum-simpan sebelumnya
+  if(!currentSession || currentSession.tarikh!==tarikh || currentSession.kelas!==kelas){
+    pendingKehadiran = {};
+  }
+
   renderKehadiranHeader();
   const isAdmin = currentRole==='admin';
-
   let sesi = DB.sessions.find(s=>s.tarikh===tarikh && s.kelas===kelas);
   if(!sesi){
     if(!isAdmin){
@@ -797,8 +804,14 @@ function loadSesi(){
   } else if(isAdmin) {
     sesi.asatizah = asatizah || sesi.asatizah;
   }
+
+  // PENTING: guna semula tanda hadir/tidak hadir yang admin dah tekan
+  // tapi belum sempat disimpan — elak hilang akibat auto-sync 6 saat
+  Object.assign(sesi.kehadiran, pendingKehadiran);
+
   if(isAdmin) DB.rhByDate[tarikh] = rh!=='' ? parseInt(rh) : (DB.rhByDate[tarikh]||0);
   currentSession = sesi;
+  // ...baki fungsi kekal sama seperti asal (render senarai pelajar dsb)
 
   const pelajarKelas = DB.students.filter(p=>p.status===kelas);
   document.getElementById('khListCard').style.display='block';
@@ -827,11 +840,13 @@ function loadSesi(){
 function setHadir(pid, val){
   if(!currentSession || currentRole!=='admin') return;
   currentSession.kehadiran[pid] = val;
+  pendingKehadiran[pid] = val; // simpan sebagai belum-committed
   loadSesi();
 }
 async function simpanKehadiran(){
   if(!currentSession || currentRole!=='admin') return;
-  await saveDB();
+  const ok = await saveDB();
+  if(ok){ pendingKehadiran = {}; } // dah berjaya simpan, tak perlu pending lagi
   renderDashboard();
 }
 function cetakKehadiran(){
